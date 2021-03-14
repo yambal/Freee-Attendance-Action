@@ -1,8 +1,9 @@
-import {hrRequest, FreeeApiError} from "../../hrRequst"
+import {hrRequest} from "../../hrRequst"
+import {FreeeApiError} from "../../types"
 import * as functions from "firebase-functions";
 import { AxiosError } from "axios";
 
-type AvailableType = "clock_in" | "break_begin" | "break_end" | "clock_out"
+export type AvailableType = "clock_in" | "break_begin" | "break_end" | "clock_out"
 export type AvailableTypes = {
   base_date: string
   available_types: AvailableType[]
@@ -22,6 +23,7 @@ export const availableTypes = (token: string, companyId: number, employeeId: num
       company_id: companyId
     }).get(`/employees/${employeeId}/time_clocks/available_types`)
     .then((response) => {
+      functions.logger.info("availableTypes", response.data)
       const availableTypes: AvailableTypes = response.data
       resolve(availableTypes)
     })

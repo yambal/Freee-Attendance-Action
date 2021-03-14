@@ -1,2 +1,2 @@
-export {timeClocks} from "./timeClocks"
+export {getTimeClocks} from "./getTimeClocks"
 export {availableTypes as timeClocksAvailableTypes} from "./availableTypes"
