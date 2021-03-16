@@ -30,10 +30,10 @@ app.handle("CheckToken", async (conv: any) => {
     }))
 
     return hr.emp.timeClocks.get(bearerToken, company.id, company.employee_id)
-    .then((timeClocks: EmployeeTimeClock[] ) => {
-      functions.logger.log("timeClocks", timeClocks)
-      conv.scene.next.name = "LinkedUser";
-    })
+  })
+  .then((timeClocks: EmployeeTimeClock[] ) => {
+    functions.logger.log("timeClocks", timeClocks)
+    conv.scene.next.name = "LinkedUser";
   })
   .catch((error: FreeeApiError) => {
     onCheckUserHelperError(conv, error)
@@ -63,18 +63,13 @@ app.handle("LinkedUser", async (conv: any) => {
     conv.add(`<speak>${company.name}の${company.display_name}</speak>`);
 
     return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
-    .then((approvedType) => {
-      approvedType.forEach((type) => {
-        conv.add(new Suggestion({title: type.label}))
-      })
-      conv.add(new Suggestion({title: "勤怠情報"}))
-      conv.add(new Suggestion({title: "勤怠情報サマリ"}))
+  })
+  .then((approvedType) => {
+    approvedType.forEach((type) => {
+      conv.add(new Suggestion({title: type.label}))
     })
-    .catch((error) => {
-      // ?
-      conv.add(`<speak>${error.message}</speak>`);
-      conv.scene.next.name = "actions.scene.END_CONVERSATION"
-    })
+    conv.add(new Suggestion({title: "勤怠情報"}))
+    conv.add(new Suggestion({title: "勤怠情報サマリ"}))
   })
   .catch((error: FreeeApiError) => {
     // ユーザー情報取得失敗
@@ -143,24 +138,19 @@ app.handle("BreakBegin", async (conv: any) => {
 
     // 可能な処理
     return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
-    .then((types) => {
-      const approvedBreakBegin = types.find((approvedType) => {
-        return approvedType.type === "break_begin"
-      })
+  })
+  .then((types) => {
+    const approvedBreakBegin = types.find((approvedType) => {
+      return approvedType.type === "break_begin"
+    })
 
-      if(approvedBreakBegin) {
-        // 休憩開始の打刻が許可されている
-        conv.add(`<speak>${"ダミー休憩打刻"}</speak>`);
-      } else {
-        // 休憩開始の打刻が許可されていない
-        conv.add(`<speak>${"休憩開始の打刻が許可されていない"}</speak>`);
-      }
-    })
-    .catch((error: FreeeApiError) => {
-      // 可能な処理が取得できなかった
-      conv.add(`<speak>${error.message}</speak>`);
-      conv.scene.next.name = "actions.scene.END_CONVERSATION"
-    })
+    if(approvedBreakBegin) {
+      // 休憩開始の打刻が許可されている
+      conv.add(`<speak>${"ダミー休憩打刻"}</speak>`);
+    } else {
+      // 休憩開始の打刻が許可されていない
+      conv.add(`<speak>${"休憩開始の打刻が許可されていない"}</speak>`);
+    }
   })
   .catch((error: FreeeApiError) => {
     // ユーザー情報取得失敗
@@ -181,24 +171,19 @@ app.handle("BreakBegin", async (conv: any) => {
 
     // 可能な処理
     return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
-    .then((types) => {
-      const approvedBreakBegin = types.find((approvedType) => {
-        return approvedType.type === "break_end"
-      })
+  })
+  .then((types) => {
+    const approvedBreakBegin = types.find((approvedType) => {
+      return approvedType.type === "break_end"
+    })
 
-      if(approvedBreakBegin) {
-        // 休憩終了の打刻が許可されている
-        conv.add(`<speak>${"ダミー休憩終了打刻"}</speak>`);
-      } else {
-        // 休憩終了の打刻が許可されていない
-        conv.add(`<speak>${"休憩終了の打刻が許可されていない"}</speak>`);
-      }
-    })
-    .catch((error: FreeeApiError) => {
-      // 可能な処理が取得できなかった
-      conv.add(`<speak>${error.message}</speak>`);
-      conv.scene.next.name = "actions.scene.END_CONVERSATION"
-    })
+    if(approvedBreakBegin) {
+      // 休憩終了の打刻が許可されている
+      conv.add(`<speak>${"ダミー休憩終了打刻"}</speak>`);
+    } else {
+      // 休憩終了の打刻が許可されていない
+      conv.add(`<speak>${"休憩終了の打刻が許可されていない"}</speak>`);
+    }
   })
   .catch((error: FreeeApiError) => {
     // ユーザー情報取得失敗
@@ -267,14 +252,10 @@ app.handle("GetWorkRecoads", async (conv: any) => {
     const {bearerToken} = conv.user.params
     const company = user.companies[0]
     return hr.emp.workRecoad.get(bearerToken, company.id, company.employee_id)
-    .then((data) => {
-      functions.logger.info("GetWorkRecoads data", data)
-      conv.add(`<speak>${"成功"}</speak>`);
-    })
-    .catch((error: FreeeApiError) => {
-      conv.add(`<speak>${error.message}</speak>`);
-      conv.scene.next.name = "actions.scene.END_CONVERSATION"
-    })
+  })
+  .then((data) => {
+    functions.logger.info("GetWorkRecoads data", data)
+    conv.add(`<speak>${"成功"}</speak>`);
   })
   .catch((error: FreeeApiError) => {
     // ユーザー情報取得失敗
