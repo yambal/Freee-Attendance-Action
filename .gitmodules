@@ -1,0 +1,3 @@
+[submodule "functions/src/freeApi"]
+	path = functions/src/freeApi
+	url = https://github.com/yambal/Freee-API.git

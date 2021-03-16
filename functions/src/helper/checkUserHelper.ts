@@ -1,5 +1,5 @@
-import {Me, HrUser} from "../freee/hr/users/me";
-import {FreeeApiError} from "../freee/hr/types"
+import * as hr from "../freeApi/hr";
+import {FreeeApiError, HrUser} from "../freeApi/hr/hrTypes"
 import * as functions from "firebase-functions";
 
 export const checkUserHelper = (conv: any) => {
@@ -21,7 +21,7 @@ export const checkUserHelper = (conv: any) => {
     const {bearerToken} = params
 
     if(verificationStatus === "VERIFIED" && accountLinkingStatus === "LINKED" && bearerToken){
-      Me(bearerToken)
+      hr.user.me(bearerToken)
       .then((user) => {
         conv.session.params.free_user = user
         functions.logger.log("set: conv.session.params.free_user")

@@ -7,12 +7,9 @@
  */
 import {conversation, Suggestion, Card, Table} from "@assistant/conversation";
 import * as functions from "firebase-functions";
-import { FreeeApiError, EmployeeTimeClock } from "./freee/hr/types"
-import { postTimeClocks } from "./freee/hr/employees/timeClocks/postTimeClocks";
-import { getTimeClocks } from "./freee/hr/employees/timeClocks/getTimeClocks";
+import { FreeeApiError, EmployeeTimeClock } from "./freeApi/hr/hrTypes"
 import { checkUserHelper, getAvailableTypesHelper } from "./helper";
-import { getWorkRecoads } from "./freee/hr/workRecoads/getWorkRecoads";
-import { getWorkRecordSummaries } from "./freee/hr/workRecordSummaries/getWorkRecordSummaries";
+import * as hr from "./freeApi/hr/";
 
 const app = conversation({debug: false});
 
@@ -32,7 +29,7 @@ app.handle("CheckToken", async (conv: any) => {
       text: `fillfullment version : ${VERSION}`,
     }))
 
-    return getTimeClocks(bearerToken, company.id, company.employee_id)
+    return hr.emp.timeClocks.get(bearerToken, company.id, company.employee_id)
     .then((timeClocks: EmployeeTimeClock[] ) => {
       functions.logger.log("timeClocks", timeClocks)
       conv.scene.next.name = "LinkedUser";
@@ -104,7 +101,7 @@ app.handle("AttendanceStamp", async (conv: any) => {
       })
 
       if(can) {
-        return postTimeClocks(bearerToken, company.id, company.employee_id, "clock_in")
+        return hr.emp.timeClocks.post(bearerToken, company.id, company.employee_id, "clock_in")
         .then(()=> {
           conv.add(`<speak>${"出勤を打刻しました"}</speak>`);
           conv.scene.next.name = "actions.scene.END_CONVERSATION"
@@ -120,6 +117,85 @@ app.handle("AttendanceStamp", async (conv: any) => {
       }
     })
     .catch((error: FreeeApiError) => {
+      conv.add(`<speak>${error.message}</speak>`);
+      conv.scene.next.name = "actions.scene.END_CONVERSATION"
+    })
+  })
+  .catch((error: FreeeApiError) => {
+    // ユーザー情報取得失敗
+    conv.add(`<speak>${error.message}</speak>`);
+    conv.scene.next.name = "UnLinkedUser"
+  })
+})
+
+/**
+ * 休憩開始
+ */
+app.handle("BreakBegin", async (conv: any) => {
+  functions.logger.log(">> BreakBegin <<")
+  // ユーザー情報取得
+  return checkUserHelper(conv)
+  .then((user) => {
+    const {bearerToken} = conv.user.params
+    const company = user.companies[0]
+
+    functions.logger.info("time", conv.intent.params.Time)
+
+    // 可能な処理
+    return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
+    .then((types) => {
+      const approvedBreakBegin = types.find((approvedType) => {
+        return approvedType.type === "break_begin"
+      })
+
+      if(approvedBreakBegin) {
+        // 休憩開始の打刻が許可されている
+        conv.add(`<speak>${"ダミー休憩打刻"}</speak>`);
+      } else {
+        // 休憩開始の打刻が許可されていない
+        conv.add(`<speak>${"休憩開始の打刻が許可されていない"}</speak>`);
+      }
+    })
+    .catch((error: FreeeApiError) => {
+      // 可能な処理が取得できなかった
+      conv.add(`<speak>${error.message}</speak>`);
+      conv.scene.next.name = "actions.scene.END_CONVERSATION"
+    })
+  })
+  .catch((error: FreeeApiError) => {
+    // ユーザー情報取得失敗
+    conv.add(`<speak>${error.message}</speak>`);
+    conv.scene.next.name = "UnLinkedUser"
+  })
+})
+
+/**
+ * 休憩終了
+ */
+ app.handle("BreakEnd", async (conv: any) => {
+  // ユーザー情報取得
+  return checkUserHelper(conv)
+  .then((user) => {
+    const {bearerToken} = conv.user.params
+    const company = user.companies[0]
+
+    // 可能な処理
+    return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
+    .then((types) => {
+      const approvedBreakBegin = types.find((approvedType) => {
+        return approvedType.type === "break_end"
+      })
+
+      if(approvedBreakBegin) {
+        // 休憩終了の打刻が許可されている
+        conv.add(`<speak>${"ダミー休憩終了打刻"}</speak>`);
+      } else {
+        // 休憩終了の打刻が許可されていない
+        conv.add(`<speak>${"休憩終了の打刻が許可されていない"}</speak>`);
+      }
+    })
+    .catch((error: FreeeApiError) => {
+      // 可能な処理が取得できなかった
       conv.add(`<speak>${error.message}</speak>`);
       conv.scene.next.name = "actions.scene.END_CONVERSATION"
     })
@@ -149,11 +225,11 @@ app.handle("AttendanceStamp", async (conv: any) => {
       })
 
       if(checkOut) {
-        return getTimeClocks(bearerToken, company.id, company.employee_id)
+        return hr.emp.timeClocks.get(bearerToken, company.id, company.employee_id)
         .then((data: any) => {
           functions.logger.info("getTimeClocks", data)
 
-          return postTimeClocks(bearerToken, company.id, company.employee_id, "clock_out", checkOut.baseDate)
+          return hr.emp.timeClocks.post(bearerToken, company.id, company.employee_id, "clock_out", checkOut.baseDate)
           .then(()=> {
             conv.add(`<speak>${"退勤を打刻しました"}</speak>`);
             conv.scene.next.name = "actions.scene.END_CONVERSATION"
@@ -190,7 +266,7 @@ app.handle("GetWorkRecoads", async (conv: any) => {
   .then((user) => {
     const {bearerToken} = conv.user.params
     const company = user.companies[0]
-    return getWorkRecoads(bearerToken, company.id, company.employee_id)
+    return hr.emp.workRecoad.get(bearerToken, company.id, company.employee_id)
     .then((data) => {
       functions.logger.info("GetWorkRecoads data", data)
       conv.add(`<speak>${"成功"}</speak>`);
@@ -216,7 +292,7 @@ app.handle("GetWorkRecordSummaries", async (conv: any) => {
   .then((user) => {
     const {bearerToken} = conv.user.params
     const company = user.companies[0]
-    return getWorkRecordSummaries(bearerToken, company.id, company.employee_id)
+    return hr.emp.workRecoad.summaries.get(bearerToken, company.id, company.employee_id)
     .then((data) => {
       functions.logger.info("GetWorkRecordSummaries data", data)
       conv.add(new Table({

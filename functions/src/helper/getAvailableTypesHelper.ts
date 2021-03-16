@@ -1,16 +1,17 @@
-import {availableTypes, AvailableTypes, AvailableType} from "../freee/hr/employees/timeClocks/availableTypes"
-import {FreeeApiError} from "../freee/hr/types"
+import {FreeeApiError} from "../freeApi/hr/hrTypes"
 import * as functions from "firebase-functions";
+import * as hr from "../freeApi/hr/"
+import {AvailableTypes, TimeClockType} from "../freeApi/hr/hrTypes"
 
 type AvailableTypeWithLabel = {
-  type: AvailableType
+  type: TimeClockType
   label: string,
   baseDate: string
 }
 
 export const getAvailableTypesHelper = (token: string, comId: number, empId: number) => {
   return new Promise((resolve: (types: AvailableTypeWithLabel[]) => void, reject: (error: FreeeApiError) => void) => {
-    return availableTypes(token, comId, empId)
+    return hr.emp.timeClocks.getAvailableTypes(token, comId, empId)
     .then((data: AvailableTypes) => {
       const baseDate = data.base_date
       const types: AvailableTypeWithLabel[] = data.available_types.map((type) => {
