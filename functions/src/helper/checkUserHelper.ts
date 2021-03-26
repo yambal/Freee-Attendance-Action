@@ -1,9 +1,8 @@
-import * as hr from "../freeApi/hr";
-import {FreeeApiError, HrUser} from "../freeApi/hr/hrTypes"
 import * as functions from "firebase-functions";
+import * as freee from "freee-api-client"
 
 export const checkUserHelper = (conv: any) => {
-  return new Promise((resolve: (user: HrUser) => void, reject: (error: FreeeApiError) => void) => {
+  return new Promise((resolve: (user: freee.HrUser) => void, reject: (error: freee.ApiClientError) => void) => {
 
     /**
      * セッションにユーザー情報があれば利用する
@@ -21,7 +20,7 @@ export const checkUserHelper = (conv: any) => {
     const {bearerToken} = params
 
     if(verificationStatus === "VERIFIED" && accountLinkingStatus === "LINKED" && bearerToken){
-      hr.user.me(bearerToken)
+      freee.hr.user.getMe(bearerToken)
       .then((user) => {
         conv.session.params.free_user = user
         functions.logger.log("set: conv.session.params.free_user")
@@ -33,31 +32,42 @@ export const checkUserHelper = (conv: any) => {
     } else {
       if (verificationStatus !== "VERIFIED") {
         // デバイスがユーザーを認識できていない
-        const error: FreeeApiError = {
-          errorMessage: "verificationStatus error",
-          message: "ユーザーを認識できません"
+        const error: freee.ApiClientError = {
+          statusCode: undefined,
+          statusMessage: undefined,
+          axiosMessage: undefined,
+          apiMessage: "ユーザーを認識できません",
+          errorCode: "action/user/unverified"
         }
         reject(error)
       } else if(accountLinkingStatus !== "LINKED") {
         // AcountLinking が完了していない
-        const error: FreeeApiError = {
-          errorMessage: "accountLinkingStatus error",
-          message: "freee との連携設定が行われていません",
-          code: "UnLinked"
+        const error: freee.ApiClientError = {
+          statusCode: undefined,
+          statusMessage: undefined,
+          axiosMessage: undefined,
+          apiMessage: "freee との連携設定が行われていません",
+          errorCode: "action/acount/unlinked"
         }
         reject(error)
       } else if(!bearerToken){
         // トークンが無い
-        const error: FreeeApiError = {
-          errorMessage: "token error",
-          message: "認証情報がありません"
+        const error: freee.ApiClientError = {
+          statusCode: undefined,
+          statusMessage: undefined,
+          axiosMessage: undefined,
+          apiMessage: "認証情報がありません",
+          errorCode: "action/acount/token"
         }
         reject(error)
       } else {
         // ?
-        const error: FreeeApiError = {
-          errorMessage: "unknown error",
-          message: "エラー"
+        const error: freee.ApiClientError = {
+          statusCode: undefined,
+          statusMessage: undefined,
+          axiosMessage: undefined,
+          apiMessage: undefined,
+          errorCode: "action/unknown"
         }
         reject(error)
       }

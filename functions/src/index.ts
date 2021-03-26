@@ -7,9 +7,10 @@
  */
 import {conversation, Suggestion, Card, Table} from "@assistant/conversation";
 import * as functions from "firebase-functions";
-import { FreeeApiError, EmployeeTimeClock } from "./freeApi/hr/hrTypes"
+import { FreeeApiError, EmployeeTimeClock, HrCompany } from "./freeApi/hr/hrTypes"
 import { checkUserHelper, getAvailableTypesHelper } from "./helper";
 import * as hr from "./freeApi/hr/";
+import * as freee from "freee-api-client";
 
 const app = conversation({debug: false});
 
@@ -35,15 +36,19 @@ app.handle("CheckToken", async (conv: any) => {
     functions.logger.log("timeClocks", timeClocks)
     conv.scene.next.name = "LinkedUser";
   })
-  .catch((error: FreeeApiError) => {
-    onCheckUserHelperError(conv, error)
+  .catch((error: freee.ApiClientError) => {
+    onCheckUserHelperError(conv, {
+      errorMessage: error.apiMessage,
+      message: error.apiMessage,
+      code: error.errorCode
+    })
   })
 })
 
 const onCheckUserHelperError = (conv: any, error: FreeeApiError) => {
   // ユーザー情報取得失敗
   switch (error.code) {
-    case "UnLinked":
+    case "action/acount/unlinked":
       conv.user.params.bearerToken = null
       conv.scene.next.name = "UnLinkedUser"
       break;
@@ -55,10 +60,11 @@ const onCheckUserHelperError = (conv: any, error: FreeeApiError) => {
 }
 
 app.handle("LinkedUser", async (conv: any) => {
+  let company: HrCompany
   return checkUserHelper(conv)
   .then((user) => {
     const {bearerToken} = conv.user.params
-    const company = user.companies[0]
+    company = user.companies[0]
 
     conv.add(`<speak>${company.name}の${company.display_name}</speak>`);
 
@@ -70,6 +76,9 @@ app.handle("LinkedUser", async (conv: any) => {
     })
     conv.add(new Suggestion({title: "勤怠情報"}))
     conv.add(new Suggestion({title: "勤怠情報サマリ"}))
+    //if(company.role === "company_admin") {
+      conv.add(new Suggestion({title: "社員一覧"}))
+    //} 
   })
   .catch((error: FreeeApiError) => {
     // ユーザー情報取得失敗
@@ -95,14 +104,22 @@ app.handle("AttendanceStamp", async (conv: any) => {
         return approvedType.type === "clock_in"
       })
 
+      functions.logger.info("can", can, types)
+
       if(can) {
-        return hr.emp.timeClocks.post(bearerToken, company.id, company.employee_id, "clock_in")
+        return freee.hr.timeClocks.postTimeClocks(
+          bearerToken,
+          company.id,
+          company.employee_id,
+          "clock_in",
+          new Date()
+        )
         .then(()=> {
           conv.add(`<speak>${"出勤を打刻しました"}</speak>`);
           conv.scene.next.name = "actions.scene.END_CONVERSATION"
         })
-        .catch((error: FreeeApiError) => {
-          conv.add(`<speak>${error.message}</speak>`);
+        .catch((error: freee.ApiClientError) => {
+          conv.add(`<speak>${error.apiMessage}</speak>`);
           conv.scene.next.name = "actions.scene.END_CONVERSATION"
         })
       } else {
@@ -208,6 +225,8 @@ app.handle("BreakBegin", async (conv: any) => {
       const checkOut = types.find((approvedType) => {
         return approvedType.type === "clock_out"
       })
+
+      functions.logger.log("checkOut", checkOut, types)
 
       if(checkOut) {
         return hr.emp.timeClocks.get(bearerToken, company.id, company.employee_id)
@@ -342,6 +361,23 @@ app.handle("GetWorkRecordSummaries", async (conv: any) => {
 /****************************************************
  * 従業員
  ****************************************************/
+app.handle("GetComEmployree", async (conv: any) => {
+  
+  return checkUserHelper(conv)
+  .then((user) => {
+    const {bearerToken} = conv.user.params
+    const com =user.companies[0]
+    return hr.com.emp.get(bearerToken, com.id)
+  })
+  .then((emps) => {
+    functions.logger.log("emps", emps)
+    conv.add(`<speak>${emps.length}人</speak>`);
+  })
+  .catch((error) => {
+    conv.add(`<speak>${error.message}</speak>`);
+    conv.scene.next.name = "UnLinkedUser"
+  })
+})
 
 app.handle("UserName", async (conv: any) => {
   const name = conv.session.params["name"];
