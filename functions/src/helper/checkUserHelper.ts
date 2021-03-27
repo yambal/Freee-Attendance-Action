@@ -36,8 +36,13 @@ export const checkUserHelper = (conv: any) => {
           statusCode: undefined,
           statusMessage: undefined,
           axiosMessage: undefined,
-          apiMessage: "ユーザーを認識できません",
-          errorCode: "action/user/unverified"
+          apiMessage: undefined,
+          errorApi: undefined,
+          uri: undefined,
+          method: undefined,
+          extends: {
+            type: "verified"
+          }
         }
         reject(error)
       } else if(accountLinkingStatus !== "LINKED") {
@@ -46,8 +51,13 @@ export const checkUserHelper = (conv: any) => {
           statusCode: undefined,
           statusMessage: undefined,
           axiosMessage: undefined,
-          apiMessage: "freee との連携設定が行われていません",
-          errorCode: "action/acount/unlinked"
+          apiMessage: undefined,
+          errorApi: undefined,
+          uri: undefined,
+          method: undefined,
+          extends: {
+            type: "acount linking"
+          }
         }
         reject(error)
       } else if(!bearerToken){
@@ -56,8 +66,13 @@ export const checkUserHelper = (conv: any) => {
           statusCode: undefined,
           statusMessage: undefined,
           axiosMessage: undefined,
-          apiMessage: "認証情報がありません",
-          errorCode: "action/acount/token"
+          apiMessage: undefined,
+          errorApi: undefined,
+          uri: undefined,
+          method: undefined,
+          extends: {
+            type: "token"
+          }
         }
         reject(error)
       } else {
@@ -67,7 +82,12 @@ export const checkUserHelper = (conv: any) => {
           statusMessage: undefined,
           axiosMessage: undefined,
           apiMessage: undefined,
-          errorCode: "action/unknown"
+          errorApi: undefined,
+          uri: undefined,
+          method: undefined,
+          extends: {
+            type: "unknown"
+          }
         }
         reject(error)
       }

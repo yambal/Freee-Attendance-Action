@@ -1222,10 +1222,10 @@ forwarded@~0.1.2:
   resolved "https://registry.yarnpkg.com/forwarded/-/forwarded-0.1.2.tgz#98c23dab1175657b8c0573e8ceccd91b0ff18c84"
   integrity sha1-mMI9qxF1ZXuMBXPozszZGw/xjIQ=
 
-freee-api-client@^0.0.8:
-  version "0.0.8"
-  resolved "https://registry.yarnpkg.com/freee-api-client/-/freee-api-client-0.0.8.tgz#14248fb64ca4a94a73e55d501fac952e05457c0f"
-  integrity sha512-q9ryQYr/mW+5sfyHEfY4plxvoJXpnuAed29j9etthyC/3EI5I9zP7ONi1UuSxurQOxqrN1OowBS3SVy5UvcRew==
+freee-api-client@^0.3.32:
+  version "0.3.32"
+  resolved "https://registry.yarnpkg.com/freee-api-client/-/freee-api-client-0.3.32.tgz#821066c55579ac3e6b0028b46b5b0e5597cc6eb2"
+  integrity sha512-DL+PtTzJk8nAdiezW39Mp2FEvWHSfkUqulWySEXFjKgI4fogKEpXuKW1muqGxnAI9iTnaJLoqQwyMAzTthpVCg==
   dependencies:
     axios "^0.21.1"
 

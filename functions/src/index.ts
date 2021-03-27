@@ -5,87 +5,216 @@
  * https://developers.google.com/assistant/conversational/storage
  * https://developers.google.com/assistant/conversational/storage-session
  */
-import {conversation, Suggestion, Card, Table} from "@assistant/conversation";
+import {conversation, Suggestion, Table} from "@assistant/conversation";
 import * as functions from "firebase-functions";
-import { FreeeApiError, EmployeeTimeClock, HrCompany } from "./freeApi/hr/hrTypes"
-import { checkUserHelper, getAvailableTypesHelper } from "./helper";
+import { FreeeApiError, HrCompany } from "./freeApi/hr/hrTypes"
+import { checkUserHelper } from "./helper";
 import * as hr from "./freeApi/hr/";
 import * as freee from "freee-api-client";
 
 const app = conversation({debug: false});
 
-const VERSION = "0.0.3"
+//const VERSION = "0.2.0"
 
 app.handle("CheckToken", async (conv: any) => {
   functions.logger.log(">> CheckToken <<")
+  return checkUserHelper(conv)
+  .then((user) => {
+    conv.scene.next.name = "LinkedUser";
+  })
+  .catch((error: freee.ApiClientError) => {
+    onFreeApiClientError(conv, error)
+  })
+})
 
+app.handle("LinkedUser", async (conv: any) => {
+  let company: HrCompany
+  let bearerToken: string
+  let todayTimeClocks: freee.EmployeeTimeClock[]
+  let lastTimeClocks: freee.EmployeeTimeClock
+
+  return checkUserHelper(conv)
+  .then((user) => {
+    bearerToken = conv.user.params.bearerToken
+    company = user.companies[0]
+    // 本日の打刻打刻情報を取得
+    return freee.hr.timeClocks.getTimeClocks(
+      bearerToken,
+      company.id,
+      company.employee_id,
+      new Date()
+    )
+  })
+  .then((timeClocks) => {
+    todayTimeClocks = timeClocks
+    lastTimeClocks = timeClocks.slice(-1)[0]
+
+    // 打刻可能種別を取得
+    return freee.hr.timeClocks.getAvailableTypes(bearerToken, company.id, company.employee_id)
+  })
+  .then((approvedType: freee.AvailableTypes) => {
+    if(todayTimeClocks.length > 0) {
+      
+      // 打刻状態をテーブル表現
+      const rows: any = []
+      const sum = {
+        clock: 0,
+        break: 0
+      }
+
+      // レコードごとに
+      todayTimeClocks.forEach((todayTimeClock, index, arr) => {
+
+        // 前のレコード間
+        if(index > 0){
+          let label = ""
+          const before = arr[index - 1]
+          
+          const elapsedTime = freee.util.getElapsedTimeJpDate(todayTimeClock.datetime, before.datetime, true, true, false)
+          
+
+          if ((todayTimeClock.type === "clock_out" || todayTimeClock.type === "break_begin") && (before.type === "clock_in" || before.type === "break_end")) {
+            // 勤務開始|休憩終了 から 退勤|休憩開始した場合は勤務時間に追加
+            sum.clock += Math.abs(todayTimeClock.datetime.getTime() - before.datetime.getTime())
+            label = "勤務"
+          }
+          if (todayTimeClock.type === "clock_out" && before.type === "break_begin") {
+            // 休憩開始 から 退勤した場合は休憩時間に追加
+            sum.break += Math.abs(todayTimeClock.datetime.getTime() - before.datetime.getTime())
+            label = "休憩"
+          }
+          if (todayTimeClock.type === "break_end" && before.type === "break_begin") {
+            // 休憩開始 から 休憩終了した場合は休憩時間に追加
+            sum.break += Math.abs(todayTimeClock.datetime.getTime() - before.datetime.getTime())
+            label = "休憩"
+          }
+          if (todayTimeClock.type === "break_begin" && before.type === "break_begin") {
+            // 出勤 から 休憩開始した場合は休憩時間に追加
+            sum.clock += Math.abs(todayTimeClock.datetime.getTime() - before.datetime.getTime())
+            label = "勤務"
+          }
+          // 
+          if (!(todayTimeClock.type === "clock_in" && before.type === "clock_out")) {
+            rows.push({
+              cells: [
+                {text: "-"},
+                {text: `${label} : ${elapsedTime}`}
+              ]
+            })
+          }
+        }
+
+        // レコード
+        let divider = false
+        if(todayTimeClock.type === "clock_out") {
+          divider = true
+        }
+        rows.push({
+          divider,
+          cells: [
+            {text: todayTimeClock.label || "不明な打刻"},
+            {text: freee.util.getDateTimeString(todayTimeClock.datetime)},
+          ]
+        })
+      })
+
+      // 現時点の状態
+      let LastLabel = ""
+      switch (lastTimeClocks.type) {
+        case "clock_in":
+          LastLabel = "勤務中"
+          sum.clock += Math.abs(lastTimeClocks.datetime.getTime() - new Date().getTime())
+          break
+        case "clock_out":
+          break
+        case "break_begin":
+          LastLabel = "休憩中"
+          sum.break += Math.abs(lastTimeClocks.datetime.getTime() - new Date().getTime())
+          break
+        case "break_end":
+          LastLabel = "勤務中"
+          sum.clock += Math.abs(lastTimeClocks.datetime.getTime() - new Date().getTime())
+          break
+        default:
+          LastLabel = "不明"
+      }
+
+      if(lastTimeClocks.type !== "clock_out") {
+        rows.push({
+          cells: [
+            {text: "-"},
+            {text: `${LastLabel} : ${freee.util.getElapsedTimeJpDate(lastTimeClocks.datetime, new Date(), true, true, false, "少し前")}`},
+          ],
+          divider: true,
+        })
+      }
+
+      // 集計
+      rows.push({
+        cells: [
+          {text: "[ 勤務 / 休憩 ]"},
+          {text: `${freee.util.getElapsedTimeJp(sum.clock)} / ${freee.util.getElapsedTimeJp(sum.break)}`},
+        ]
+      })
+
+
+      conv.add(new Table({
+        "title": `${company.name}の${company.display_name}`,
+        "subtitle": `${freee.util.getDateString(new Date())}`,
+        "columns": [{
+          header: "打刻種別",
+        }, {
+          header: "打刻日時",
+        }],
+        rows
+      }))
+    }
+
+    conv.add(`
+      <speak>
+        ${company.name}の${company.display_name}。
+        打刻の状態は${lastTimeClocks.label}です
+      </speak>
+    `);
+    approvedType.available_types.forEach((type) => {
+      conv.add(new Suggestion({title: type.label}))
+    })
+    conv.add(new Suggestion({title: "状態"}))
+    conv.add(new Suggestion({title: "勤怠情報サマリ"}))
+    conv.add(new Suggestion({title: "終了"}))
+  })
+  .catch((error: freee.ApiClientError) => {
+    onFreeApiClientError(conv, error)
+  })
+});
+
+/**
+ * 打刻状態
+ */
+app.handle("GetTimeClockStatus", async (conv: any) => {
+  // ユーザー情報取得
   return checkUserHelper(conv)
   .then((user) => {
     const {bearerToken} = conv.user.params
     const company = user.companies[0]
 
-    conv.add(new Card({
-      title: `${company.display_name}`,
-      subtitle: `${company.name} : ${company.role}`,
-      text: `fillfullment version : ${VERSION}`,
-    }))
-
-    return hr.emp.timeClocks.get(bearerToken, company.id, company.employee_id)
+    return freee.hr.timeClocks.getTimeClocks(
+      bearerToken,
+      company.id,
+      company.employee_id,
+      new Date()
+    )
   })
-  .then((timeClocks: EmployeeTimeClock[] ) => {
-    functions.logger.log("timeClocks", timeClocks)
-    conv.scene.next.name = "LinkedUser";
+  .then((timeClocks) => {
+    const last = timeClocks.slice(-1)[0]
+    conv.add(`<speak>${`打刻状態は${last.label}`}です</speak>`);
+    conv.scene.next.name = "actions.scene.END_CONVERSATION"
   })
   .catch((error: freee.ApiClientError) => {
-    onCheckUserHelperError(conv, {
-      errorMessage: error.apiMessage,
-      message: error.apiMessage,
-      code: error.errorCode
-    })
+    functions.logger.error("GetTimeClockStatus", error)
+    onFreeApiClientError(conv, error)
   })
 })
-
-const onCheckUserHelperError = (conv: any, error: FreeeApiError) => {
-  // ユーザー情報取得失敗
-  switch (error.code) {
-    case "action/acount/unlinked":
-      conv.user.params.bearerToken = null
-      conv.scene.next.name = "UnLinkedUser"
-      break;
-    default:
-      conv.add(`<speak>${error.message}</speak>`);
-      conv.scene.next.name = "actions.scene.END_CONVERSATION"
-      break
-  }
-}
-
-app.handle("LinkedUser", async (conv: any) => {
-  let company: HrCompany
-  return checkUserHelper(conv)
-  .then((user) => {
-    const {bearerToken} = conv.user.params
-    company = user.companies[0]
-
-    conv.add(`<speak>${company.name}の${company.display_name}</speak>`);
-
-    return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
-  })
-  .then((approvedType) => {
-    approvedType.forEach((type) => {
-      conv.add(new Suggestion({title: type.label}))
-    })
-    conv.add(new Suggestion({title: "勤怠情報"}))
-    conv.add(new Suggestion({title: "勤怠情報サマリ"}))
-    //if(company.role === "company_admin") {
-      conv.add(new Suggestion({title: "社員一覧"}))
-    //} 
-  })
-  .catch((error: FreeeApiError) => {
-    // ユーザー情報取得失敗
-    conv.add(`<speak>${error.message}</speak>`);
-    conv.scene.next.name = "UnLinkedUser"
-  })
-});
 
 /**
  * 出勤処理
@@ -97,46 +226,50 @@ app.handle("AttendanceStamp", async (conv: any) => {
     const {bearerToken} = conv.user.params
     const company = user.companies[0]
 
-    // 可能な処理
-    return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
-    .then((types) => {
-      const can = types.some((approvedType) => {
-        return approvedType.type === "clock_in"
-      })
-
-      functions.logger.info("can", can, types)
-
-      if(can) {
-        return freee.hr.timeClocks.postTimeClocks(
-          bearerToken,
-          company.id,
-          company.employee_id,
-          "clock_in",
-          new Date()
-        )
-        .then(()=> {
-          conv.add(`<speak>${"出勤を打刻しました"}</speak>`);
-          conv.scene.next.name = "actions.scene.END_CONVERSATION"
-        })
-        .catch((error: freee.ApiClientError) => {
-          conv.add(`<speak>${error.apiMessage}</speak>`);
-          conv.scene.next.name = "actions.scene.END_CONVERSATION"
-        })
-      } else {
-        conv.add(`<speak>${"出勤の打刻はできません"}</speak>`);
-        conv.scene.next.name = "actions.scene.END_CONVERSATION"
-        return
-      }
-    })
-    .catch((error: FreeeApiError) => {
-      conv.add(`<speak>${error.message}</speak>`);
-      conv.scene.next.name = "actions.scene.END_CONVERSATION"
-    })
+    return freee.hr.timeClocks.postTimeClocks(
+      bearerToken,
+      company.id,
+      company.employee_id,
+      "clock_in",
+      new Date()
+    )
   })
-  .catch((error: FreeeApiError) => {
-    // ユーザー情報取得失敗
-    conv.add(`<speak>${error.message}</speak>`);
-    conv.scene.next.name = "UnLinkedUser"
+  .then((timeClock: freee.EmployeeTimeClock) => {
+    conv.add(`<speak>${"出勤を打刻しました。"}</speak>`);
+    conv.scene.next.name = "actions.scene.END_CONVERSATION"
+  })
+  .catch((error: freee.ApiClientError) => {
+    functions.logger.error("AttendanceStamp", error)
+    onFreeApiClientError(conv, error)
+  })
+})
+
+/**
+ * 退勤処理
+ */
+ app.handle("LeaveWorkStamp", async (conv: any) => {
+  functions.logger.log(">> LeaveWorkStamp <<")
+  // ユーザー情報取得
+  return checkUserHelper(conv)
+  .then((user) => {
+    const {bearerToken} = conv.user.params
+    const company = user.companies[0]
+
+    return freee.hr.timeClocks.postTimeClocks(
+      bearerToken,
+      company.id,
+      company.employee_id,
+      "clock_out",
+      new Date()
+    )
+  })
+  .then((timeClock: freee.EmployeeTimeClock) => {
+    conv.add(`<speak>${`${freee.util.getReadableTime(timeClock.datetime)} : 「${timeClock.label}」を打刻しました。`}</speak>`);
+    conv.scene.next.name = "actions.scene.END_CONVERSATION"
+  })
+  .catch((error: freee.ApiClientError) => {
+    functions.logger.error("LeaveWorkStamp", error)
+    onFreeApiClientError(conv, error)
   })
 })
 
@@ -145,34 +278,21 @@ app.handle("AttendanceStamp", async (conv: any) => {
  */
 app.handle("BreakBegin", async (conv: any) => {
   functions.logger.log(">> BreakBegin <<")
+
   // ユーザー情報取得
   return checkUserHelper(conv)
   .then((user) => {
     const {bearerToken} = conv.user.params
     const company = user.companies[0]
-
-    functions.logger.info("time", conv.intent.params.Time)
-
-    // 可能な処理
-    return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
+    return freee.hr.timeClocks.postTimeClocks(bearerToken, company.id, company.employee_id, "break_begin", new Date())
   })
-  .then((types) => {
-    const approvedBreakBegin = types.find((approvedType) => {
-      return approvedType.type === "break_begin"
-    })
-
-    if(approvedBreakBegin) {
-      // 休憩開始の打刻が許可されている
-      conv.add(`<speak>${"ダミー休憩打刻"}</speak>`);
-    } else {
-      // 休憩開始の打刻が許可されていない
-      conv.add(`<speak>${"休憩開始の打刻が許可されていない"}</speak>`);
-    }
+  .then((timeClock: freee.EmployeeTimeClock) => {
+    conv.add(`<speak>${"休憩を打刻しました。"}</speak>`);
+    conv.scene.next.name = "actions.scene.END_CONVERSATION"
   })
-  .catch((error: FreeeApiError) => {
-    // ユーザー情報取得失敗
-    conv.add(`<speak>${error.message}</speak>`);
-    conv.scene.next.name = "UnLinkedUser"
+  .catch((error: freee.ApiClientError) => {
+    functions.logger.error("BreakBegin", error)
+    onFreeApiClientError(conv, error)
   })
 })
 
@@ -186,102 +306,91 @@ app.handle("BreakBegin", async (conv: any) => {
     const {bearerToken} = conv.user.params
     const company = user.companies[0]
 
-    // 可能な処理
-    return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
+    return freee.hr.timeClocks.postTimeClocks(bearerToken, company.id, company.employee_id, "break_end", new Date())
   })
-  .then((types) => {
-    const approvedBreakBegin = types.find((approvedType) => {
-      return approvedType.type === "break_end"
-    })
+  .then((timeClock: freee.EmployeeTimeClock) => {
+    conv.add(`<speak>${"休憩終了を打刻しました。"}</speak>`);
+    conv.scene.next.name = "actions.scene.END_CONVERSATION"
+  })
+  .catch((error: freee.ApiClientError) => {
+    functions.logger.error("BreakBegin", error)
+    onFreeApiClientError(conv, error)
+  })
+})
 
-    if(approvedBreakBegin) {
-      // 休憩終了の打刻が許可されている
-      conv.add(`<speak>${"ダミー休憩終了打刻"}</speak>`);
-    } else {
-      // 休憩終了の打刻が許可されていない
-      conv.add(`<speak>${"休憩終了の打刻が許可されていない"}</speak>`);
-    }
+app.handle("OnErrorLinkedUser", async (conv: any) => {
+  return checkUserHelper(conv)
+  .then((user) => {
+    const {bearerToken} = conv.user.params
+    const company = user.companies[0]
+    return freee.hr.timeClocks.getAvailableTypes(bearerToken, company.id, company.employee_id)
   })
-  .catch((error: FreeeApiError) => {
-    // ユーザー情報取得失敗
-    conv.add(`<speak>${error.message}</speak>`);
-    conv.scene.next.name = "UnLinkedUser"
+  .then((availableTypes: freee.AvailableTypes) => {
+    const availableTypeLabels: string[] = []
+    availableTypes.available_types.forEach((availableType) => {
+      conv.add(new Suggestion({title: availableType.label}))
+      availableTypeLabels.push(availableType.label)
+    })
+    conv.add(new Suggestion({title: "状態"}))
+    conv.add(new Suggestion({title: "勤怠情報サマリ"}))
+    conv.add(new Suggestion({title: "終了"}))
+    conv.add(`<speak>${`「${availableTypeLabels.join("」「")}」が可能です`}</speak>`);
+  })
+  .catch((error: freee.ApiClientError) => {
+    functions.logger.error("OnErrorLinkedUser", error)
+    onFreeApiClientError(conv, error)
   })
 })
 
 /**
- * 退勤処理
+ * エラー処理
+ * @param conv 
+ * @param error 
  */
- app.handle("LeaveWorkStamp", async (conv: any) => {
-  // ユーザー情報取得
-  return checkUserHelper(conv)
-  .then((user) => {
-    const {bearerToken} = conv.user.params
-    const company = user.companies[0]
+ const onFreeApiClientError = (conv: any, error: freee.ApiClientError) => {
+  functions.logger.error("onFreeApiClientError", error)
 
-    // 可能な処理
-    return getAvailableTypesHelper(bearerToken, company.id, company.employee_id)
-    .then((types) => {
-      const checkOut = types.find((approvedType) => {
-        return approvedType.type === "clock_out"
-      })
+  if(error.extends && error.extends.type) {
+    // Action 固有
+    switch (error.extends.type){
+      case "verified":
+        // ユーザー認証がされていない
+        break;
+      case "acount linking":
+        // Acount Linking が行われていない
+        conv.user.params.bearerToken = null
+        conv.scene.next.name = "UnLinkedUser"
+        break;
+      case "token":
+        // token
+    }
+    return
+  }
 
-      functions.logger.log("checkOut", checkOut, types)
-
-      if(checkOut) {
-        return hr.emp.timeClocks.get(bearerToken, company.id, company.employee_id)
-        .then((data: any) => {
-          functions.logger.info("getTimeClocks", data)
-
-          return hr.emp.timeClocks.post(bearerToken, company.id, company.employee_id, "clock_out", checkOut.baseDate)
-          .then(()=> {
-            conv.add(`<speak>${"退勤を打刻しました"}</speak>`);
-            conv.scene.next.name = "actions.scene.END_CONVERSATION"
-          })
-          .catch((error: FreeeApiError) => {
-            conv.add(`<speak>${error.message}</speak>`);
-            conv.scene.next.name = "actions.scene.END_CONVERSATION"
-          })
-        })
+  switch (error.uri) {
+    case "/users/me":
+      // ユーザー取得に失敗した
+      break;
+    case "/employees/{emp_id}/time_clocks":
+      // 打刻と取得に関するエラー
+      if(error.method === "post") {
+        // 打刻に失敗した
       } else {
-        conv.add(`<speak>${"退勤の打刻はできません"}</speak>`);
-        conv.scene.next.name = "actions.scene.END_CONVERSATION"
-        return
+        // 取得に失敗した
       }
-    })
-    .catch((error: FreeeApiError) => {
-      conv.add(`<speak>${error.message}</speak>`);
+      conv.add(`<speak>${error.apiMessage}</speak>`);
       conv.scene.next.name = "actions.scene.END_CONVERSATION"
-    })
-  })
-  .catch((error: FreeeApiError) => {
-    // ユーザー情報取得失敗
-    conv.add(`<speak>${error.message}</speak>`);
-    conv.scene.next.name = "UnLinkedUser"
-  })
-})
+      break;
+    case "/employees/{emp_id}/time_clocks/available_types":
+      // 打刻・取得に失敗した
+      break;
+    default:
+      conv.add(`<speak>${error.apiMessage}</speak>`);
+      conv.scene.next.name = "actions.scene.END_CONVERSATION"
+      break
+  }
+}
 
-/****************************************************
- * 勤怠
- ****************************************************/
-app.handle("GetWorkRecoads", async (conv: any) => {
-  functions.logger.log(">> GetWorkRecoads <<")
-  return checkUserHelper(conv)
-  .then((user) => {
-    const {bearerToken} = conv.user.params
-    const company = user.companies[0]
-    return hr.emp.workRecoad.get(bearerToken, company.id, company.employee_id)
-  })
-  .then((data) => {
-    functions.logger.info("GetWorkRecoads data", data)
-    conv.add(`<speak>${"成功"}</speak>`);
-  })
-  .catch((error: FreeeApiError) => {
-    // ユーザー情報取得失敗
-    conv.add(`<speak>${error.message}</speak>`);
-    conv.scene.next.name = "UnLinkedUser"
-  })
-})
 
 /****************************************************
  * 勤怠情報サマリ
@@ -353,36 +462,19 @@ app.handle("GetWorkRecordSummaries", async (conv: any) => {
     })
   })
   .catch((error: FreeeApiError) => {
-    onCheckUserHelperError(conv, error)
+    onFreeApiClientError(conv, {
+      statusCode: undefined,
+      statusMessage: undefined,
+      axiosMessage: undefined,
+      apiMessage: undefined,
+      errorApi: undefined,
+      extends: {
+        type: "summaries"
+      },
+      method: undefined,
+      uri: undefined
+    })
   })
-})
-
-
-/****************************************************
- * 従業員
- ****************************************************/
-app.handle("GetComEmployree", async (conv: any) => {
-  
-  return checkUserHelper(conv)
-  .then((user) => {
-    const {bearerToken} = conv.user.params
-    const com =user.companies[0]
-    return hr.com.emp.get(bearerToken, com.id)
-  })
-  .then((emps) => {
-    functions.logger.log("emps", emps)
-    conv.add(`<speak>${emps.length}人</speak>`);
-  })
-  .catch((error) => {
-    conv.add(`<speak>${error.message}</speak>`);
-    conv.scene.next.name = "UnLinkedUser"
-  })
-})
-
-app.handle("UserName", async (conv: any) => {
-  const name = conv.session.params["name"];
-  const ssml = `<speak>${name}</speak>`;
-  conv.add(ssml);
 })
 
 exports.ActionsOnGoogleFulfillment = functions.https.onRequest(app);
