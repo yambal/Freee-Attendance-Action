@@ -1,2 +1,3 @@
 export {checkUserHelper} from "./checkUserHelper"
-export {getAvailableTypesHelper} from "./getAvailableTypesHelper";
+export {getSuggestionTitles, setSuggestion} from "./suggestionHelper";
+export {timeClocksTable} from "./timeClocksTable";

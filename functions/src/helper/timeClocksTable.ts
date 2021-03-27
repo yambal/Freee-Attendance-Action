@@ -1,9 +1,17 @@
 import * as freee from "freee-api-client";
 import {Table} from "@assistant/conversation";
 
+/**
+ * 
+ * @param todayTimeClocks 
+ * @param title 
+ * @returns 
+ */
 export const timeClocksTable = (todayTimeClocks: freee.EmployeeTimeClock[], title: string): Table | null => {
-  if(todayTimeClocks.length > 0) {
+  if(todayTimeClocks && todayTimeClocks.length > 0) {
     const lastTimeClocks = todayTimeClocks.slice(-1)[0]
+    const start = freee.util.getReadableTime(todayTimeClocks[0].datetime)
+    const end = freee.util.getReadableTime(lastTimeClocks.datetime)
       
     // 打刻状態をテーブル表現
     const rows: any = []
@@ -110,7 +118,7 @@ export const timeClocksTable = (todayTimeClocks: freee.EmployeeTimeClock[], titl
 
     return new Table({
       "title": title,
-      "subtitle": `${freee.util.getDateString(new Date())}`,
+      "subtitle": `${start}${start !== end ? `- ${end}`: ""}`,
       "columns": [{
         header: "打刻種別",
       }, {
