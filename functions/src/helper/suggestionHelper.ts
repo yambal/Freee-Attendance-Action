@@ -10,7 +10,7 @@ export const getSuggestionTitles = (token: string, company_id: number, employee_
         availableTypeLabels.push(availableType.label)
       })
       availableTypeLabels.push("打刻状態")
-      availableTypeLabels.push("勤怠情報サマリ")
+      // availableTypeLabels.push("勤怠情報サマリ")
       availableTypeLabels.push("終了")
 
       resolve(availableTypeLabels)

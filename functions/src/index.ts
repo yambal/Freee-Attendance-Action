@@ -61,9 +61,11 @@ app.handle("LinkedUser", async (conv: any) => {
       conv.add(table)
     }
 
-    let status ="本日の打刻情報はありません"
+    let status ="<speak>本日の打刻情報はありません。</speak>"
     if(lastTimeClocks){
-      status = `打刻の状態は${lastTimeClocks.label}です`
+      status = `打刻の状態は「${lastTimeClocks.label}」です`
+    } else {
+      conv.scene.next.name = "DoYouAttendanceStamp";
     }
 
     conv.add(`
@@ -82,6 +84,7 @@ app.handle("LinkedUser", async (conv: any) => {
  * 打刻状態
  */
 app.handle("GetTimeClockStatus", async (conv: any) => {
+  functions.logger.info(">> GetTimeClockStatus <<")
   // ユーザー情報取得
   return checkUserHelper(conv)
   .then((user) => {
@@ -96,9 +99,16 @@ app.handle("GetTimeClockStatus", async (conv: any) => {
     )
   })
   .then((timeClocks) => {
-    const last = timeClocks.slice(-1)[0]
-    conv.add(`<speak>${`打刻状態は${last.label}`}です</speak>`);
-    conv.scene.next.name = "actions.scene.END_CONVERSATION"
+    functions.logger.info("timeClocks", timeClocks)
+
+    if (timeClocks && timeClocks.length > 0) {
+      const last = timeClocks.slice(-1)[0]
+      conv.add(`<speak>${`打刻状態は${last.label}`}です</speak>`);
+      conv.scene.next.name = "actions.scene.END_CONVERSATION"
+    } else {
+      conv.add("<speak>本日の打刻情報はありません。</speak>");
+      conv.scene.next.name = "DoYouAttendanceStamp";
+    }
   })
   .catch((error: freee.ApiClientError) => {
     functions.logger.error("GetTimeClockStatus", error)
@@ -223,7 +233,7 @@ app.handle("OnErrorLinkedUser", async (conv: any) => {
       conv.add(new Suggestion({title: suggestionTitle}))
     })
     conv.add(new Suggestion({title: "打刻状態"}))
-    conv.add(new Suggestion({title: "勤怠情報サマリ"}))
+    // conv.add(new Suggestion({title: "勤怠情報サマリ"}))
     conv.add(new Suggestion({title: "終了"}))
 
     conv.add(`<speak>${`「${suggestionTitles.join("」「")}」が可能です`}</speak>`);
@@ -247,6 +257,8 @@ app.handle("OnErrorLinkedUser", async (conv: any) => {
     switch (error.extends.type){
       case "verified":
         // ユーザー認証がされていない
+        conv.add(`<speak>申し訳ございません、ユーザーを認識できませんでした。</speak>`);
+        conv.scene.next.name = "actions.scene.END_CONVERSATION"
         break;
       case "acount linking":
         // Acount Linking が行われていない
